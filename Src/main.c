@@ -21,8 +21,19 @@ void Error_Handler(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C1_Init(void);
 static void MX_USART1_UART_Init(void);
-//void StartDefaultTask(void const * argument);
+
+
 static void initTask(void *);
+static void motorTask(void *);
+
+TIM_HandleTypeDef    pwmTimHandle;
+TIM_OC_InitTypeDef   PWMChannelConfig;
+void PWMSetup(void);
+void SET_PWM_DUTY_CYCLE(uint16_t DUTY_CYCLE);
+
+void PWMSetupChannel2(void);
+void PWMSetupChannel3(void);
+void PWMSetupChannel4(void);
 
 /* USER CODE BEGIN PFP */
 /* Private function prototypes -----------------------------------------------*/
@@ -48,6 +59,8 @@ int main(void)
 
 
     xTaskCreate(initTask,  "Initial", 256, NULL, tskIDLE_PRIORITY+2, NULL) ;
+    xTaskCreate(motorTask,  "Motor", 256, NULL, tskIDLE_PRIORITY+2, NULL) ;
+
   	vTaskStartScheduler();
 
 
@@ -67,6 +80,11 @@ static void initTask(void *pvParameters)
 	  /* init code for USB_DEVICE */
 	  MX_USB_DEVICE_Init();
 
+		PWMSetup();
+		PWMSetupChannel2();
+		PWMSetupChannel3();
+		PWMSetupChannel4();
+
 	  /* USER CODE BEGIN 5 */
 	  /* Infinite loop */
 	  for(;;)
@@ -76,6 +94,145 @@ static void initTask(void *pvParameters)
 		  CDC_Transmit_FS(testDataToSend, 12);
 		  vTaskDelay(1000);
 	  }
+}
+
+static void motorTask(void *pvParameters)
+{
+	for(;;)
+	{
+		SET_PWM_DUTY_CYCLE(12000); /*Reverse*/
+		vTaskDelay(3000);
+
+		SET_PWM_DUTY_CYCLE(15000); /*STOP*/
+		vTaskDelay(3000);
+
+		SET_PWM_DUTY_CYCLE(18000); /*FOREWARD*/
+		vTaskDelay(3000);
+
+		SET_PWM_DUTY_CYCLE(15000); /*STOP*/
+		vTaskDelay(3000);
+	}
+}
+
+void PWMSetup(void)
+{
+	/*BEGIN GPIO SETUP*/
+	__HAL_RCC_GPIOA_CLK_ENABLE();
+
+	GPIO_InitTypeDef gpioInit;
+	gpioInit.Pin = GPIO_PIN_6;
+
+	//SETUP for alternate Function
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Pull = GPIO_PULLUP;
+    gpioInit.Speed = GPIO_SPEED_HIGH;
+    gpioInit.Alternate = GPIO_AF2_TIM3;
+    HAL_GPIO_Init(GPIOA, &gpioInit);
+	/*END GPIO SETUP*/
+
+	/*BEGIN TIMER SETUP */
+	  __TIM3_CLK_ENABLE();
+	pwmTimHandle.Instance = TIM3;
+	pwmTimHandle.Init.Prescaler         = 10-1; //uhPrescalerValue;
+	pwmTimHandle.Init.Period            = 20000 - 1;	//SHOULD Give PWM Frequency of  500HZ
+	pwmTimHandle.Init.ClockDivision     = 0;
+	pwmTimHandle.Init.CounterMode       = TIM_COUNTERMODE_UP;
+	pwmTimHandle.Init.RepetitionCounter = 0;
+	pwmTimHandle.Channel = HAL_TIM_ACTIVE_CHANNEL_1 | HAL_TIM_ACTIVE_CHANNEL_2| HAL_TIM_ACTIVE_CHANNEL_3 | HAL_TIM_ACTIVE_CHANNEL_4;
+	HAL_TIM_PWM_Init(&pwmTimHandle);
+
+	/*END TIMER SETUP */
+
+
+	/*##-2- Configure the PWM channels #########################################*/
+	/* Common configuration for all channels */
+	PWMChannelConfig.OCMode       = TIM_OCMODE_PWM1;
+	PWMChannelConfig.OCPolarity   = TIM_OCPOLARITY_HIGH;
+	PWMChannelConfig.OCFastMode   = TIM_OCFAST_DISABLE;
+	PWMChannelConfig.OCNPolarity  = TIM_OCNPOLARITY_HIGH;
+	PWMChannelConfig.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+	PWMChannelConfig.OCIdleState  = TIM_OCIDLESTATE_RESET;
+
+	/* Set the pulse value for channel 1 */
+	PWMChannelConfig.Pulse = 1500;    //START AT STOP
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_1);
+}
+/*10,000 / 2 = FULL SPEED*/
+void SET_PWM_DUTY_CYCLE(uint16_t DUTY_CYCLE)
+{
+	PWMChannelConfig.Pulse = DUTY_CYCLE;
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_1);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_1);		//MOTOR 1
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_2);		//MOTOR 2
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_3);		//MOTOR 3
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_4);		//MOTOR 4
+}
+
+void PWMSetupChannel2(void)
+{
+	/*BEGIN GPIO SETUP*/
+	GPIO_InitTypeDef gpioInit;
+	gpioInit.Pin = GPIO_PIN_7;
+
+	//SETUP for alternate Function
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Pull = GPIO_PULLUP;
+    gpioInit.Speed = GPIO_SPEED_HIGH;
+    gpioInit.Alternate = GPIO_AF2_TIM3;
+    HAL_GPIO_Init(GPIOA, &gpioInit);
+	/*END GPIO SETUP*/
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_2);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_2);
+}
+
+void PWMSetupChannel3(void)
+{
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	/*BEGIN GPIO SETUP*/
+	GPIO_InitTypeDef gpioInit;
+	gpioInit.Pin = GPIO_PIN_0;
+
+	//SETUP for alternate Function
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Pull = GPIO_PULLUP;
+    gpioInit.Speed = GPIO_SPEED_HIGH;
+    gpioInit.Alternate = GPIO_AF2_TIM3;
+    HAL_GPIO_Init(GPIOB, &gpioInit);
+	/*END GPIO SETUP*/
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_3);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_3);
+}
+
+void PWMSetupChannel4(void)
+{
+	__HAL_RCC_GPIOB_CLK_ENABLE();
+
+	/*BEGIN GPIO SETUP*/
+	GPIO_InitTypeDef gpioInit;
+	gpioInit.Pin = GPIO_PIN_1;
+
+	//SETUP for alternate Function
+    gpioInit.Mode = GPIO_MODE_AF_PP;
+    gpioInit.Pull = GPIO_PULLUP;
+    gpioInit.Speed = GPIO_SPEED_HIGH;
+    gpioInit.Alternate = GPIO_AF2_TIM3;
+    HAL_GPIO_Init(GPIOB, &gpioInit);
+	/*END GPIO SETUP*/
+
+	HAL_TIM_PWM_ConfigChannel(&pwmTimHandle, &PWMChannelConfig, TIM_CHANNEL_4);
+	HAL_TIM_PWM_Start(&pwmTimHandle, TIM_CHANNEL_4);
 }
 
 /** System Clock Configuration
